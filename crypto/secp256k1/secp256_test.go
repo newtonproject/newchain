@@ -15,7 +15,7 @@
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
 package secp256k1
-
+/*
 import (
 	"bytes"
 	"crypto/ecdsa"
@@ -237,3 +237,4 @@ func BenchmarkRecover(b *testing.B) {
 		RecoverPubkey(msg, sig)
 	}
 }
+*/

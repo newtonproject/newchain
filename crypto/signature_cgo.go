@@ -17,7 +17,7 @@
 // +build !nacl,!js,!nocgo
 
 package crypto
-
+/*
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -85,3 +85,4 @@ func CompressPubkey(pubkey *ecdsa.PublicKey) []byte {
 func S256() elliptic.Curve {
 	return secp256k1.S256()
 }
+*/

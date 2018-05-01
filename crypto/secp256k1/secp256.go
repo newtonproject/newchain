@@ -34,6 +34,7 @@ typedef void (*callbackFunc) (const char* msg, void* data);
 extern void secp256k1GoPanicIllegal(const char* msg, void* data);
 extern void secp256k1GoPanicError(const char* msg, void* data);
 */
+/*
 import "C"
 
 import (
@@ -177,3 +178,4 @@ func checkSignature(sig []byte) error {
 	}
 	return nil
 }
+*/

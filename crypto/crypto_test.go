@@ -28,8 +28,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-var testAddrHex = "970e8128ab834e8eac17ab8e3812f010678cf791"
-var testPrivHex = "289c2857d4598e37fb9647507e47a309d6133539bf21a8b9cb6df88fd5232032"
+var testAddrHex = "9e7f70a05ecfa4c95c374393ed43ccb6e901e150"
+var testPrivHex = "24a9746315c133c821aac8e1f65b77fbaf7250ba36dbd081551c1b8fec7cdc44"
 
 // These tests are sanity checks.
 // They should ensure that we don't e.g. use Sha3-224 instead of Sha3-256
@@ -65,6 +65,7 @@ func TestSign(t *testing.T) {
 	if err != nil {
 		t.Errorf("Sign error: %s", err)
 	}
+
 	recoveredPub, err := Ecrecover(msg, sig)
 	if err != nil {
 		t.Errorf("ECRecover error: %s", err)
@@ -105,9 +106,9 @@ func TestNewContractAddress(t *testing.T) {
 	caddr0 := CreateAddress(addr, 0)
 	caddr1 := CreateAddress(addr, 1)
 	caddr2 := CreateAddress(addr, 2)
-	checkAddr(t, common.HexToAddress("333c3310824b7c685133f2bedb2ca4b8b4df633d"), caddr0)
-	checkAddr(t, common.HexToAddress("8bda78331c916a08481428e4b07c96d3e916d165"), caddr1)
-	checkAddr(t, common.HexToAddress("c9ddedf451bc62ce88bf9292afb13df35b670699"), caddr2)
+	checkAddr(t, common.HexToAddress("abba38c376098c2e47d413e7eb8a79d837b480ab"), caddr0)
+	checkAddr(t, common.HexToAddress("9c9f57b205b37e6c081cd9135a81f542ce985c64"), caddr1)
+	checkAddr(t, common.HexToAddress("768d82e058fd9ec24e790f40b37b71949fc91c7a"), caddr2)
 }
 
 func TestLoadECDSAFile(t *testing.T) {

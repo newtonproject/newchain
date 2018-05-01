@@ -15,7 +15,7 @@
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
 package secp256k1
-
+/*
 import "C"
 import "unsafe"
 
@@ -31,3 +31,4 @@ func secp256k1GoPanicIllegal(msg *C.char, data unsafe.Pointer) {
 func secp256k1GoPanicError(msg *C.char, data unsafe.Pointer) {
 	panic("internal error: " + C.GoString(msg))
 }
+*/

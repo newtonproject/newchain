@@ -28,10 +28,10 @@ import (
 )
 
 var (
-	testmsg     = hexutil.MustDecode("0xce0677bb30baa8cf067c88db9811f4333d131bf8bcf12fe7065d211dce971008")
-	testsig     = hexutil.MustDecode("0x90f27b8b488db00b00606796d2987f6a5f59ae62ea05effe84fef5b8b0e549984a691139ad57a3f0b906637673aa2f63d1f55cb1a69199d4009eea23ceaddc9301")
-	testpubkey  = hexutil.MustDecode("0x04e32df42865e97135acfb65f3bae71bdc86f4d49150ad6a440b6f15878109880a0a2b2667f7e725ceea70c673093bf67663e0312623c8e091b13cf2c0f11ef652")
-	testpubkeyc = hexutil.MustDecode("0x02e32df42865e97135acfb65f3bae71bdc86f4d49150ad6a440b6f15878109880a")
+	testmsg     = hexutil.MustDecode("0xb94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
+	testsig     = hexutil.MustDecode("0xd76b7a4371ba103a0f1cd12e64f36da0347b949b25bd6e3378a4a4fd1d723046f53cab47e5690de9f5ff46522524307492c5a9c725fc6f6136c4f05b0a6a16e800")
+	testpubkey  = hexutil.MustDecode("0x045ec2b231da4367294c74185f519ba6adb1d56fb3b7a5c5e26ef625d45ee7642c0345f1315b84bfdc6755533ada867b89b098624967ddc81bfa58b587cbc99980")
+	testpubkeyc = hexutil.MustDecode("0x025ec2b231da4367294c74185f519ba6adb1d56fb3b7a5c5e26ef625d45ee7642c")
 )
 
 func TestEcrecover(t *testing.T) {
@@ -107,8 +107,8 @@ func TestDecompressPubkey(t *testing.T) {
 func TestCompressPubkey(t *testing.T) {
 	key := &ecdsa.PublicKey{
 		Curve: S256(),
-		X:     math.MustParseBig256("0xe32df42865e97135acfb65f3bae71bdc86f4d49150ad6a440b6f15878109880a"),
-		Y:     math.MustParseBig256("0x0a2b2667f7e725ceea70c673093bf67663e0312623c8e091b13cf2c0f11ef652"),
+		X:     math.MustParseBig256("0x5ec2b231da4367294c74185f519ba6adb1d56fb3b7a5c5e26ef625d45ee7642c"),
+		Y:     math.MustParseBig256("0x0345f1315b84bfdc6755533ada867b89b098624967ddc81bfa58b587cbc99980"),
 	}
 	compressed := CompressPubkey(key)
 	if !bytes.Equal(compressed, testpubkeyc) {

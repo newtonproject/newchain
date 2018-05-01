@@ -31,20 +31,12 @@
 
 package secp256k1
 
-import (
-	"crypto/elliptic"
-	"math/big"
-	"unsafe"
-
-	"github.com/ethereum/go-ethereum/common/math"
-)
-
 /*
 #include "libsecp256k1/include/secp256k1.h"
 extern int secp256k1_ext_scalar_mul(const secp256k1_context* ctx, const unsigned char *point, const unsigned char *scalar);
 */
 import "C"
-
+/*
 // This code is from https://github.com/ThePiachu/GoBit and implements
 // several Koblitz elliptic curves over prime fields.
 //
@@ -302,3 +294,4 @@ func init() {
 func S256() *BitCurve {
 	return theCurve
 }
+*/
