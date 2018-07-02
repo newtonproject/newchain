@@ -30,6 +30,9 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 )
 
+// NetworkID is the network ID (also known as the chain ID) for this chain
+var NetworkID *big.Int
+
 // SignerFn is a signer function callback when a contract requires a method to
 // sign the transaction before submission.
 type SignerFn func(types.Signer, common.Address, *types.Transaction) (*types.Transaction, error)
@@ -234,7 +237,13 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	if opts.Signer == nil {
 		return nil, errors.New("no signer to authorize the transaction with")
 	}
-	signedTx, err := opts.Signer(types.HomesteadSigner{}, opts.From, rawTx)
+	var signer types.Signer
+	if NetworkID == nil {
+		signer = types.HomesteadSigner{}
+	} else {
+		signer = types.NewEIP155Signer(NetworkID)
+	}
+	signedTx, err := opts.Signer(signer, opts.From, rawTx)
 	if err != nil {
 		return nil, err
 	}
