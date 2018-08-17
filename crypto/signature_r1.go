@@ -87,12 +87,9 @@ func decompressPubkey2(x *big.Int, yBit byte) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("invalid x")
 	}
 
-	xxx := new(big.Int).Mul(x,x)
-	xxx.Mul(xxx,x)
-
-	ax := new(big.Int).Mul(big.NewInt(3),x)
-
-	yy := new(big.Int).Sub(xxx, ax)
+	xx := new(big.Int).Mul(x, x)
+	xxa := new(big.Int).Sub(xx, big.NewInt(3))
+	yy := new(big.Int).Mul(xxa, x)
 	yy.Add(yy,elliptic.P256().Params().B)
 	yy.Mod(yy,elliptic.P256().Params().P)
 
@@ -101,8 +98,11 @@ func decompressPubkey2(x *big.Int, yBit byte) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("can not revcovery public key")
 	}
 
-	y2 := new(big.Int).Neg(y1)
-	y2.Mod(y2,elliptic.P256().Params().P)
+	getY2 := func(y1 *big.Int) *big.Int {
+		y2 := new(big.Int).Neg(y1)
+		y2.Mod(y2, elliptic.P256().Params().P)
+		return y2
+	}
 
 	y := new(big.Int)
 
@@ -110,13 +110,13 @@ func decompressPubkey2(x *big.Int, yBit byte) (*ecdsa.PublicKey, error) {
 		if y1.Bit(0) == 0 {
 			y = y1
 		} else {
-			y = y2
+			y = getY2(y1)
 		}
 	} else {
 		if y1.Bit(0) == 1 {
 			y = y1
 		} else {
-			y = y2
+			y = getY2(y1)
 		}
 	}
 
@@ -169,7 +169,7 @@ func ecRecovery2(messageHash []byte, sig []byte,recId int64) (*ecdsa.PublicKey, 
 	srInv.Mul(srInv,s)
 	srInv.Mod(srInv,n)
 
-	eInvrInv := new(big.Int).Mul(rInv,eInv,)
+	eInvrInv := new(big.Int).Mul(rInv,eInv)
 	eInvrInv.Mod(eInvrInv,n)
 
 	krx,kry := p256.ScalarMult(R.X,R.Y,srInv.Bytes())
