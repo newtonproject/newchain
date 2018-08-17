@@ -24,13 +24,27 @@ import (
 	"fmt"
 	"crypto/rand"
 	"math/big"
+	"errors"
 	"github.com/ethereum/go-ethereum/log"
+)
+
+var (
+	ErrInvalidMsgLen       = errors.New("invalid message length, need 32 bytes")
+	ErrInvalidSignatureLen = errors.New("invalid signature length")
+	ErrInvalidRecoveryID   = errors.New("invalid signature recovery id")
+	ErrInvalidKey          = errors.New("invalid private key")
 )
 
 // Ecrecover returns the uncompressed public key that created the given signature.
 func Ecrecover(hash, sig []byte) ([]byte, error) {
 	//return secp256k1.RecoverPubkey(hash, sig)
 	//ecRecovery2(messageHash []byte, sig []byte,recId int64) (*ecdsa.PublicKey, error)
+	if len(hash) != 32 {
+		return nil, ErrInvalidMsgLen
+	}
+	if err := checkSignature(sig); err != nil {
+		return nil, err
+	}
 	recId := int64(sig[len(sig)-1])
 	pubKey, err := ecRecovery2(hash, sig[:len(sig)-1],recId)
 	if pubKey == nil {
@@ -43,10 +57,27 @@ func Ecrecover(hash, sig []byte) ([]byte, error) {
 
 // SigToPub returns the public key that created the given signature.
 func SigToPub(hash, sig []byte) (*ecdsa.PublicKey, error) {
+	if len(hash) != 32 {
+		return nil, ErrInvalidMsgLen
+	}
+	if err := checkSignature(sig); err != nil {
+		return nil, err
+	}
 	recId := int64(sig[len(sig)-1])
 	pubKey, err := ecRecovery2(hash, sig[:len(sig)-1],recId)
 	return pubKey,err
 }
+
+func checkSignature(sig []byte) error {
+	if len(sig) != 65 {
+		return ErrInvalidSignatureLen
+	}
+	if sig[64] >= 4 {
+		return ErrInvalidRecoveryID
+	}
+	return nil
+}
+
 // DecompressPubkey parses a public key in the 33-byte compressed format.
 func decompressPubkey2(x *big.Int, yBit byte) (*ecdsa.PublicKey, error) {
 	if (yBit != 0x02) && (yBit != 0x03) {
@@ -161,6 +192,9 @@ func Sign(hash []byte, prv *ecdsa.PrivateKey) (sig []byte, err error) {
 	if len(hash) != 32 {
 		return nil, fmt.Errorf("hash is required to be exactly 32 bytes (%d)", len(hash))
 	}
+	if prv == nil {
+		return nil, ErrInvalidKey
+	}
 	//seckey := math.PaddedBigBytes(prv.D, prv.Params().BitSize/8)
 	//defer zeroBytes(seckey)
 	//return secp256k1.Sign(hash, seckey)
@@ -212,6 +246,10 @@ func VerifySignature(pubkey, hash, signature []byte) bool {
 	}
 	if len(signature) != 64 {
 		log.Info("signature length error")
+		return false
+	}
+	if len(pubkey) == 0 {
+		log.Info("public key length")
 		return false
 	}
 
