@@ -130,6 +130,9 @@ func ecRecovery2(messageHash []byte, sig []byte,recId int64) (*ecdsa.PublicKey, 
 	sigLen := len(sig)
 	r := new(big.Int).SetBytes(sig[:(sigLen / 2)])
 	s := new(big.Int).SetBytes(sig[(sigLen / 2):])
+	if r.Cmp(secp256r1N) > 0 || s.Cmp(secp256r1N) > 0 {
+		return nil,fmt.Errorf("r or s can not big then n")
+	}
 
 	p256 := elliptic.P256()
 	n := p256.Params().N
