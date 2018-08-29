@@ -207,6 +207,9 @@ func Sign(hash []byte, prv *ecdsa.PrivateKey) (sig []byte, err error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.Cmp(secp256r1halfN) > 0 {
+		s = new(big.Int).Sub(secp256r1N, s)
+	}
 
 	// encode the signature {R, S}
 	// big.Int.Bytes() will need padding in the case of leading zero bytes
