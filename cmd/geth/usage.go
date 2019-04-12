@@ -26,7 +26,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/internal/debug"
-	"gopkg.in/urfave/cli.v1"
+	cli "gopkg.in/urfave/cli.v1"
 )
 
 // AppHelpTemplate is the test template for the default, global app help topic.
@@ -74,6 +74,7 @@ var AppHelpFlagGroups = []flagGroup{
 			utils.NetworkIdFlag,
 			utils.TestnetFlag,
 			utils.RinkebyFlag,
+			utils.GoerliFlag,
 			utils.SyncModeFlag,
 			utils.GCModeFlag,
 			utils.EthStatsURLFlag,
@@ -81,9 +82,11 @@ var AppHelpFlagGroups = []flagGroup{
 			utils.LightServFlag,
 			utils.LightPeersFlag,
 			utils.LightKDFFlag,
+			utils.WhitelistFlag,
 		},
 	},
-	{Name: "DEVELOPER CHAIN",
+	{
+		Name: "DEVELOPER CHAIN",
 		Flags: []cli.Flag{
 			utils.DeveloperFlag,
 			utils.DeveloperPeriodFlag,
@@ -113,6 +116,7 @@ var AppHelpFlagGroups = []flagGroup{
 	{
 		Name: "TRANSACTION POOL",
 		Flags: []cli.Flag{
+			utils.TxPoolLocalsFlag,
 			utils.TxPoolNoLocalsFlag,
 			utils.TxPoolJournalFlag,
 			utils.TxPoolRejournalFlag,
@@ -130,6 +134,7 @@ var AppHelpFlagGroups = []flagGroup{
 		Flags: []cli.Flag{
 			utils.CacheFlag,
 			utils.CacheDatabaseFlag,
+			utils.CacheTrieFlag,
 			utils.CacheGCFlag,
 			utils.TrieCacheGenFlag,
 		},
@@ -148,6 +153,7 @@ var AppHelpFlagGroups = []flagGroup{
 			utils.RPCListenAddrFlag,
 			utils.RPCPortFlag,
 			utils.RPCApiFlag,
+			utils.RPCGlobalGasCap,
 			utils.WSEnabledFlag,
 			utils.WSListenAddrFlag,
 			utils.WSPortFlag,
@@ -184,10 +190,14 @@ var AppHelpFlagGroups = []flagGroup{
 		Flags: []cli.Flag{
 			utils.MiningEnabledFlag,
 			utils.MinerThreadsFlag,
-			utils.EtherbaseFlag,
-			utils.TargetGasLimitFlag,
-			utils.GasPriceFlag,
-			utils.ExtraDataFlag,
+			utils.MinerNotifyFlag,
+			utils.MinerGasPriceFlag,
+			utils.MinerGasTargetFlag,
+			utils.MinerGasLimitFlag,
+			utils.MinerEtherbaseFlag,
+			utils.MinerExtraDataFlag,
+			utils.MinerRecommitIntervalFlag,
+			utils.MinerNoVerfiyFlag,
 		},
 	},
 	{
@@ -201,15 +211,28 @@ var AppHelpFlagGroups = []flagGroup{
 		Name: "VIRTUAL MACHINE",
 		Flags: []cli.Flag{
 			utils.VMEnableDebugFlag,
+			utils.EVMInterpreterFlag,
+			utils.EWASMInterpreterFlag,
 		},
 	},
 	{
 		Name: "LOGGING AND DEBUGGING",
 		Flags: append([]cli.Flag{
-			utils.MetricsEnabledFlag,
 			utils.FakePoWFlag,
 			utils.NoCompactionFlag,
 		}, debug.Flags...),
+	},
+	{
+		Name: "METRICS AND STATS",
+		Flags: []cli.Flag{
+			utils.MetricsEnabledFlag,
+			utils.MetricsEnableInfluxDBFlag,
+			utils.MetricsInfluxDBEndpointFlag,
+			utils.MetricsInfluxDBDatabaseFlag,
+			utils.MetricsInfluxDBUsernameFlag,
+			utils.MetricsInfluxDBPasswordFlag,
+			utils.MetricsInfluxDBTagsFlag,
+		},
 	},
 	{
 		Name:  "WHISPER (EXPERIMENTAL)",
@@ -218,8 +241,11 @@ var AppHelpFlagGroups = []flagGroup{
 	{
 		Name: "DEPRECATED",
 		Flags: []cli.Flag{
-			utils.FastSyncFlag,
-			utils.LightModeFlag,
+			utils.MinerLegacyThreadsFlag,
+			utils.MinerLegacyGasTargetFlag,
+			utils.MinerLegacyGasPriceFlag,
+			utils.MinerLegacyEtherbaseFlag,
+			utils.MinerLegacyExtraDataFlag,
 		},
 	},
 	{
