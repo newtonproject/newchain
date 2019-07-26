@@ -19,6 +19,8 @@ package crypto
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"encoding/hex"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -33,6 +35,47 @@ var (
 	testpubkey  = hexutil.MustDecode("0x045ec2b231da4367294c74185f519ba6adb1d56fb3b7a5c5e26ef625d45ee7642c0345f1315b84bfdc6755533ada867b89b098624967ddc81bfa58b587cbc99980")
 	testpubkeyc = hexutil.MustDecode("0x025ec2b231da4367294c74185f519ba6adb1d56fb3b7a5c5e26ef625d45ee7642c")
 )
+
+func TestDecompress(t *testing.T) {
+	key, err := DecompressPubkey(nil)
+	var (
+		enc, _ = hex.DecodeString("03760c4460e5336ac9bbd87952a3c7ec4363fc0a97bd31c86430806e287b437fd1")
+		dec    = &ecdsa.PublicKey{
+			Curve: S256(),
+			X:     hexutil.MustDecodeBig("0x760c4460e5336ac9bbd87952a3c7ec4363fc0a97bd31c86430806e287b437fd1"),
+			Y:     hexutil.MustDecodeBig("0xb01abc6e1db640cf3106b520344af1d58b00b57823db3e1407cbc433e1b6d04d"),
+		}
+	)
+	key, err = DecompressPubkey(enc)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if comparePublicKey(key, dec) != true {
+		t.Fatal("wrong result")
+	}
+}
+
+func TestDecompress2(t *testing.T) {
+	for i := 1; i < 1000; i++ {
+		randkey, err := GenerateKey()
+		if err != nil {
+			t.Fatalf("randkey got %v", err)
+		}
+		dec := &randkey.PublicKey
+		bk := CompressPubkey(dec)
+		enc := hex.EncodeToString(bk)
+		key, err := DecompressPubkey(bk)
+		if err != nil {
+			fmt.Println("failed in round:", i, enc)
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if comparePublicKey(key, dec) != true {
+			t.Fatal("wrong result")
+		}
+		fmt.Println("passed in round:", i, enc)
+	}
+}
+
 
 func TestEcrecover(t *testing.T) {
 	pubkey, err := Ecrecover(testmsg, testsig)
