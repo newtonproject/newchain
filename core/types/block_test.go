@@ -18,12 +18,14 @@ package types
 
 import (
 	"bytes"
-	"fmt"
 	"math/big"
 	"reflect"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -52,11 +54,7 @@ func TestBlockEncoding(t *testing.T) {
 	check("Size", block.Size(), common.StorageSize(len(blockEnc)))
 
 	tx1 := NewTransaction(0, common.HexToAddress("095e7baea6a6c7c4c2dfeb977efac326af552d87"), big.NewInt(10), 50000, big.NewInt(10), nil)
-
 	tx1, _ = tx1.WithSignature(HomesteadSigner{}, common.Hex2Bytes("9bea4c4daac7c7c52e093e6a4c35dbbcf8856f1af7b059ba20253e70848d094f8a8fae537ce25ed8cb5af9adac3f141af69bd515bd2ba031522df09b97dd72b100"))
-	fmt.Println(block.Transactions()[0].Hash())
-	fmt.Println(tx1.data)
-	fmt.Println(tx1.Hash())
 	check("len(Transactions)", len(block.Transactions()), 1)
 	check("Transactions[0].Hash", block.Transactions()[0].Hash(), tx1.Hash())
 
@@ -67,4 +65,68 @@ func TestBlockEncoding(t *testing.T) {
 	if !bytes.Equal(ourBlockEnc, blockEnc) {
 		t.Errorf("encoded block mismatch:\ngot:  %x\nwant: %x", ourBlockEnc, blockEnc)
 	}
+}
+
+func TestUncleHash(t *testing.T) {
+	uncles := make([]*Header, 0)
+	h := CalcUncleHash(uncles)
+	exp := common.HexToHash("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
+	if h != exp {
+		t.Fatalf("empty uncle hash is wrong, got %x != %x", h, exp)
+	}
+}
+
+var benchBuffer = bytes.NewBuffer(make([]byte, 0, 32000))
+
+func BenchmarkEncodeBlock(b *testing.B) {
+	block := makeBenchBlock()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		benchBuffer.Reset()
+		if err := rlp.Encode(benchBuffer, block); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func makeBenchBlock() *Block {
+	var (
+		key, _   = crypto.GenerateKey()
+		txs      = make([]*Transaction, 70)
+		receipts = make([]*Receipt, len(txs))
+		signer   = NewEIP155Signer(params.TestChainConfig.ChainID)
+		uncles   = make([]*Header, 3)
+	)
+	header := &Header{
+		Difficulty: math.BigPow(11, 11),
+		Number:     math.BigPow(2, 9),
+		GasLimit:   12345678,
+		GasUsed:    1476322,
+		Time:       9876543,
+		Extra:      []byte("coolest block on chain"),
+	}
+	for i := range txs {
+		amount := math.BigPow(2, int64(i))
+		price := big.NewInt(300000)
+		data := make([]byte, 100)
+		tx := NewTransaction(uint64(i), common.Address{}, amount, 123457, price, data)
+		signedTx, err := SignTx(tx, signer, key)
+		if err != nil {
+			panic(err)
+		}
+		txs[i] = signedTx
+		receipts[i] = NewReceipt(make([]byte, 32), false, tx.Gas())
+	}
+	for i := range uncles {
+		uncles[i] = &Header{
+			Difficulty: math.BigPow(11, 11),
+			Number:     math.BigPow(2, 9),
+			GasLimit:   12345678,
+			GasUsed:    1476322,
+			Time:       9876543,
+			Extra:      []byte("benchmark uncle"),
+		}
+	}
+	return NewBlock(header, txs, uncles, receipts)
 }

@@ -25,7 +25,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -40,7 +39,9 @@ var daoOldGenesis = `{
 	"mixhash"    : "0x0000000000000000000000000000000000000000000000000000000000000000",
 	"parentHash" : "0x0000000000000000000000000000000000000000000000000000000000000000",
 	"timestamp"  : "0x00",
-	"config"     : {}
+	"config"     : {
+		"homesteadBlock" : 0
+	}
 }`
 
 // Genesis block for nodes which actively oppose the DAO fork
@@ -55,6 +56,7 @@ var daoNoForkGenesis = `{
 	"parentHash" : "0x0000000000000000000000000000000000000000000000000000000000000000",
 	"timestamp"  : "0x00",
 	"config"     : {
+		"homesteadBlock" : 0,
 		"daoForkBlock"   : 314,
 		"daoForkSupport" : false
 	}
@@ -72,6 +74,7 @@ var daoProForkGenesis = `{
 	"parentHash" : "0x0000000000000000000000000000000000000000000000000000000000000000",
 	"timestamp"  : "0x00",
 	"config"     : {
+		"homesteadBlock" : 0,
 		"daoForkBlock"   : 314,
 		"daoForkSupport" : true
 	}
@@ -121,7 +124,7 @@ func testDAOForkBlockNewChain(t *testing.T, test int, genesis string, expectBloc
 	}
 	// Retrieve the DAO config flag from the database
 	path := filepath.Join(datadir, "geth", "chaindata")
-	db, err := ethdb.NewLDBDatabase(path, 0, 0)
+	db, err := rawdb.NewLevelDBDatabase(path, 0, 0, "")
 	if err != nil {
 		t.Fatalf("test %d: failed to open test database: %v", test, err)
 	}

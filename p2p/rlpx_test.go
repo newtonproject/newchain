@@ -55,7 +55,7 @@ func TestSharedSecret(t *testing.T) {
 	}
 	t.Logf("Secret:\n%v %x\n%v %x", len(ss0), ss0, len(ss0), ss1)
 	if !bytes.Equal(ss0, ss1) {
-		t.Errorf("dont match :(")
+		t.Errorf("don't match :(")
 	}
 }
 
@@ -222,7 +222,6 @@ func TestProtocolHandshake(t *testing.T) {
 }
 
 func TestProtocolHandshakeErrors(t *testing.T) {
-	our := &protoHandshake{Version: 3, Caps: []Cap{{"foo", 2}, {"bar", 3}}, Name: "quux"}
 	tests := []struct {
 		code uint64
 		msg  interface{}
@@ -258,7 +257,7 @@ func TestProtocolHandshakeErrors(t *testing.T) {
 	for i, test := range tests {
 		p1, p2 := MsgPipe()
 		go Send(p1, test.code, test.msg)
-		_, err := readProtocolHandshake(p2, our)
+		_, err := readProtocolHandshake(p2)
 		if !reflect.DeepEqual(err, test.err) {
 			t.Errorf("test %d: error mismatch: got %q, want %q", i, err, test.err)
 		}

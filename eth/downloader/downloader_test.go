@@ -26,8 +26,9 @@ import (
 	"testing"
 	"time"
 
-	ethereum "github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
@@ -36,7 +37,8 @@ import (
 
 // Reduce some of the parameters to make the tester faster.
 func init() {
-	MaxForkAncestry = uint64(10000)
+	fullMaxForkAncestry = 10000
+	lightMaxForkAncestry = 10000
 	blockCacheItems = 1024
 	fsHeaderContCheck = 500 * time.Millisecond
 }
@@ -56,6 +58,11 @@ type downloadTester struct {
 	ownReceipts map[common.Hash]types.Receipts // Receipts belonging to the tester
 	ownChainTd  map[common.Hash]*big.Int       // Total difficulties of the blocks in the local chain
 
+	ancientHeaders  map[common.Hash]*types.Header  // Ancient headers belonging to the tester
+	ancientBlocks   map[common.Hash]*types.Block   // Ancient blocks belonging to the tester
+	ancientReceipts map[common.Hash]types.Receipts // Ancient receipts belonging to the tester
+	ancientChainTd  map[common.Hash]*big.Int       // Ancient total difficulties of the blocks in the local chain
+
 	lock sync.RWMutex
 }
 
@@ -70,10 +77,17 @@ func newTester() *downloadTester {
 		ownBlocks:   map[common.Hash]*types.Block{testGenesis.Hash(): testGenesis},
 		ownReceipts: map[common.Hash]types.Receipts{testGenesis.Hash(): nil},
 		ownChainTd:  map[common.Hash]*big.Int{testGenesis.Hash(): testGenesis.Difficulty()},
+
+		// Initialize ancient store with test genesis block
+		ancientHeaders:  map[common.Hash]*types.Header{testGenesis.Hash(): testGenesis.Header()},
+		ancientBlocks:   map[common.Hash]*types.Block{testGenesis.Hash(): testGenesis},
+		ancientReceipts: map[common.Hash]types.Receipts{testGenesis.Hash(): nil},
+		ancientChainTd:  map[common.Hash]*big.Int{testGenesis.Hash(): testGenesis.Difficulty()},
 	}
-	tester.stateDb = ethdb.NewMemDatabase()
+	tester.stateDb = rawdb.NewMemoryDatabase()
 	tester.stateDb.Put(testGenesis.Root().Bytes(), []byte{0x00})
-	tester.downloader = New(FullSync, tester.stateDb, new(event.TypeMux), tester, nil, tester.dropPeer)
+
+	tester.downloader = New(0, tester.stateDb, trie.NewSyncBloom(1, tester.stateDb), new(event.TypeMux), tester, nil, tester.dropPeer)
 	return tester
 }
 
@@ -120,6 +134,9 @@ func (dl *downloadTester) HasFastBlock(hash common.Hash, number uint64) bool {
 	dl.lock.RLock()
 	defer dl.lock.RUnlock()
 
+	if _, ok := dl.ancientReceipts[hash]; ok {
+		return true
+	}
 	_, ok := dl.ownReceipts[hash]
 	return ok
 }
@@ -128,7 +145,16 @@ func (dl *downloadTester) HasFastBlock(hash common.Hash, number uint64) bool {
 func (dl *downloadTester) GetHeaderByHash(hash common.Hash) *types.Header {
 	dl.lock.RLock()
 	defer dl.lock.RUnlock()
+	return dl.getHeaderByHash(hash)
+}
 
+// getHeaderByHash returns the header if found either within ancients or own blocks)
+// This method assumes that the caller holds at least the read-lock (dl.lock)
+func (dl *downloadTester) getHeaderByHash(hash common.Hash) *types.Header {
+	header := dl.ancientHeaders[hash]
+	if header != nil {
+		return header
+	}
 	return dl.ownHeaders[hash]
 }
 
@@ -137,6 +163,10 @@ func (dl *downloadTester) GetBlockByHash(hash common.Hash) *types.Block {
 	dl.lock.RLock()
 	defer dl.lock.RUnlock()
 
+	block := dl.ancientBlocks[hash]
+	if block != nil {
+		return block
+	}
 	return dl.ownBlocks[hash]
 }
 
@@ -146,6 +176,9 @@ func (dl *downloadTester) CurrentHeader() *types.Header {
 	defer dl.lock.RUnlock()
 
 	for i := len(dl.ownHashes) - 1; i >= 0; i-- {
+		if header := dl.ancientHeaders[dl.ownHashes[i]]; header != nil {
+			return header
+		}
 		if header := dl.ownHeaders[dl.ownHashes[i]]; header != nil {
 			return header
 		}
@@ -159,6 +192,12 @@ func (dl *downloadTester) CurrentBlock() *types.Block {
 	defer dl.lock.RUnlock()
 
 	for i := len(dl.ownHashes) - 1; i >= 0; i-- {
+		if block := dl.ancientBlocks[dl.ownHashes[i]]; block != nil {
+			if _, err := dl.stateDb.Get(block.Root().Bytes()); err == nil {
+				return block
+			}
+			return block
+		}
 		if block := dl.ownBlocks[dl.ownHashes[i]]; block != nil {
 			if _, err := dl.stateDb.Get(block.Root().Bytes()); err == nil {
 				return block
@@ -174,6 +213,9 @@ func (dl *downloadTester) CurrentFastBlock() *types.Block {
 	defer dl.lock.RUnlock()
 
 	for i := len(dl.ownHashes) - 1; i >= 0; i-- {
+		if block := dl.ancientBlocks[dl.ownHashes[i]]; block != nil {
+			return block
+		}
 		if block := dl.ownBlocks[dl.ownHashes[i]]; block != nil {
 			return block
 		}
@@ -185,7 +227,7 @@ func (dl *downloadTester) CurrentFastBlock() *types.Block {
 func (dl *downloadTester) FastSyncCommitHead(hash common.Hash) error {
 	// For now only check that the state trie is correct
 	if block := dl.GetBlockByHash(hash); block != nil {
-		_, err := trie.NewSecure(block.Root(), trie.NewDatabase(dl.stateDb), 0)
+		_, err := trie.NewSecure(block.Root(), trie.NewDatabase(dl.stateDb))
 		return err
 	}
 	return fmt.Errorf("non existent block: %x", hash[:4])
@@ -196,6 +238,16 @@ func (dl *downloadTester) GetTd(hash common.Hash, number uint64) *big.Int {
 	dl.lock.RLock()
 	defer dl.lock.RUnlock()
 
+	return dl.getTd(hash)
+}
+
+// getTd retrieves the block's total difficulty if found either within
+// ancients or own blocks).
+// This method assumes that the caller holds at least the read-lock (dl.lock)
+func (dl *downloadTester) getTd(hash common.Hash) *big.Int {
+	if td := dl.ancientChainTd[hash]; td != nil {
+		return td
+	}
 	return dl.ownChainTd[hash]
 }
 
@@ -203,27 +255,34 @@ func (dl *downloadTester) GetTd(hash common.Hash, number uint64) *big.Int {
 func (dl *downloadTester) InsertHeaderChain(headers []*types.Header, checkFreq int) (i int, err error) {
 	dl.lock.Lock()
 	defer dl.lock.Unlock()
-
 	// Do a quick check, as the blockchain.InsertHeaderChain doesn't insert anything in case of errors
-	if _, ok := dl.ownHeaders[headers[0].ParentHash]; !ok {
-		return 0, errors.New("unknown parent")
+	if dl.getHeaderByHash(headers[0].ParentHash) == nil {
+		return 0, fmt.Errorf("InsertHeaderChain: unknown parent at first position, parent of number %d", headers[0].Number)
 	}
+	var hashes []common.Hash
 	for i := 1; i < len(headers); i++ {
+		hash := headers[i-1].Hash()
 		if headers[i].ParentHash != headers[i-1].Hash() {
-			return i, errors.New("unknown parent")
+			return i, fmt.Errorf("non-contiguous import at position %d", i)
 		}
+		hashes = append(hashes, hash)
 	}
+	hashes = append(hashes, headers[len(headers)-1].Hash())
 	// Do a full insert if pre-checks passed
 	for i, header := range headers {
-		if _, ok := dl.ownHeaders[header.Hash()]; ok {
+		hash := hashes[i]
+		if dl.getHeaderByHash(hash) != nil {
 			continue
 		}
-		if _, ok := dl.ownHeaders[header.ParentHash]; !ok {
-			return i, errors.New("unknown parent")
+		if dl.getHeaderByHash(header.ParentHash) == nil {
+			// This _should_ be impossible, due to precheck and induction
+			return i, fmt.Errorf("InsertHeaderChain: unknown parent at position %d", i)
 		}
-		dl.ownHashes = append(dl.ownHashes, header.Hash())
-		dl.ownHeaders[header.Hash()] = header
-		dl.ownChainTd[header.Hash()] = new(big.Int).Add(dl.ownChainTd[header.ParentHash], header.Difficulty)
+		dl.ownHashes = append(dl.ownHashes, hash)
+		dl.ownHeaders[hash] = header
+
+		td := dl.getTd(header.ParentHash)
+		dl.ownChainTd[hash] = new(big.Int).Add(td, header.Difficulty)
 	}
 	return len(headers), nil
 }
@@ -232,27 +291,27 @@ func (dl *downloadTester) InsertHeaderChain(headers []*types.Header, checkFreq i
 func (dl *downloadTester) InsertChain(blocks types.Blocks) (i int, err error) {
 	dl.lock.Lock()
 	defer dl.lock.Unlock()
-
 	for i, block := range blocks {
 		if parent, ok := dl.ownBlocks[block.ParentHash()]; !ok {
-			return i, errors.New("unknown parent")
+			return i, fmt.Errorf("InsertChain: unknown parent at position %d / %d", i, len(blocks))
 		} else if _, err := dl.stateDb.Get(parent.Root().Bytes()); err != nil {
-			return i, fmt.Errorf("unknown parent state %x: %v", parent.Root(), err)
+			return i, fmt.Errorf("InsertChain: unknown parent state %x: %v", parent.Root(), err)
 		}
-		if _, ok := dl.ownHeaders[block.Hash()]; !ok {
+		if hdr := dl.getHeaderByHash(block.Hash()); hdr == nil {
 			dl.ownHashes = append(dl.ownHashes, block.Hash())
 			dl.ownHeaders[block.Hash()] = block.Header()
 		}
 		dl.ownBlocks[block.Hash()] = block
 		dl.ownReceipts[block.Hash()] = make(types.Receipts, 0)
 		dl.stateDb.Put(block.Root().Bytes(), []byte{0x00})
-		dl.ownChainTd[block.Hash()] = new(big.Int).Add(dl.ownChainTd[block.ParentHash()], block.Difficulty())
+		td := dl.getTd(block.ParentHash())
+		dl.ownChainTd[block.Hash()] = new(big.Int).Add(td, block.Difficulty())
 	}
 	return len(blocks), nil
 }
 
 // InsertReceiptChain injects a new batch of receipts into the simulated chain.
-func (dl *downloadTester) InsertReceiptChain(blocks types.Blocks, receipts []types.Receipts) (i int, err error) {
+func (dl *downloadTester) InsertReceiptChain(blocks types.Blocks, receipts []types.Receipts, ancientLimit uint64) (i int, err error) {
 	dl.lock.Lock()
 	defer dl.lock.Unlock()
 
@@ -260,11 +319,24 @@ func (dl *downloadTester) InsertReceiptChain(blocks types.Blocks, receipts []typ
 		if _, ok := dl.ownHeaders[blocks[i].Hash()]; !ok {
 			return i, errors.New("unknown owner")
 		}
-		if _, ok := dl.ownBlocks[blocks[i].ParentHash()]; !ok {
-			return i, errors.New("unknown parent")
+		if _, ok := dl.ancientBlocks[blocks[i].ParentHash()]; !ok {
+			if _, ok := dl.ownBlocks[blocks[i].ParentHash()]; !ok {
+				return i, errors.New("InsertReceiptChain: unknown parent")
+			}
 		}
-		dl.ownBlocks[blocks[i].Hash()] = blocks[i]
-		dl.ownReceipts[blocks[i].Hash()] = receipts[i]
+		if blocks[i].NumberU64() <= ancientLimit {
+			dl.ancientBlocks[blocks[i].Hash()] = blocks[i]
+			dl.ancientReceipts[blocks[i].Hash()] = receipts[i]
+
+			// Migrate from active db to ancient db
+			dl.ancientHeaders[blocks[i].Hash()] = blocks[i].Header()
+			dl.ancientChainTd[blocks[i].Hash()] = new(big.Int).Add(dl.ancientChainTd[blocks[i].ParentHash()], blocks[i].Difficulty())
+			delete(dl.ownHeaders, blocks[i].Hash())
+			delete(dl.ownChainTd, blocks[i].Hash())
+		} else {
+			dl.ownBlocks[blocks[i].Hash()] = blocks[i]
+			dl.ownReceipts[blocks[i].Hash()] = receipts[i]
+		}
 	}
 	return len(blocks), nil
 }
@@ -282,6 +354,11 @@ func (dl *downloadTester) Rollback(hashes []common.Hash) {
 		delete(dl.ownHeaders, hashes[i])
 		delete(dl.ownReceipts, hashes[i])
 		delete(dl.ownBlocks, hashes[i])
+
+		delete(dl.ancientChainTd, hashes[i])
+		delete(dl.ancientHeaders, hashes[i])
+		delete(dl.ancientReceipts, hashes[i])
+		delete(dl.ancientBlocks, hashes[i])
 	}
 }
 
@@ -406,16 +483,16 @@ func assertOwnForkedChain(t *testing.T, tester *downloadTester, common int, leng
 		blocks += length - common
 		receipts += length - common
 	}
-	if tester.downloader.mode == LightSync {
+	if tester.downloader.getMode() == LightSync {
 		blocks, receipts = 1, 1
 	}
-	if hs := len(tester.ownHeaders); hs != headers {
+	if hs := len(tester.ownHeaders) + len(tester.ancientHeaders) - 1; hs != headers {
 		t.Fatalf("synchronised headers mismatch: have %v, want %v", hs, headers)
 	}
-	if bs := len(tester.ownBlocks); bs != blocks {
+	if bs := len(tester.ownBlocks) + len(tester.ancientBlocks) - 1; bs != blocks {
 		t.Fatalf("synchronised blocks mismatch: have %v, want %v", bs, blocks)
 	}
-	if rs := len(tester.ownReceipts); rs != receipts {
+	if rs := len(tester.ownReceipts) + len(tester.ancientReceipts) - 1; rs != receipts {
 		t.Fatalf("synchronised receipts mismatch: have %v, want %v", rs, receipts)
 	}
 }
@@ -423,12 +500,14 @@ func assertOwnForkedChain(t *testing.T, tester *downloadTester, common int, leng
 // Tests that simple synchronization against a canonical chain works correctly.
 // In this test common ancestor lookup should be short circuited and not require
 // binary searching.
-func TestCanonicalSynchronisation62(t *testing.T)      { testCanonicalSynchronisation(t, 62, FullSync) }
-func TestCanonicalSynchronisation63Full(t *testing.T)  { testCanonicalSynchronisation(t, 63, FullSync) }
-func TestCanonicalSynchronisation63Fast(t *testing.T)  { testCanonicalSynchronisation(t, 63, FastSync) }
-func TestCanonicalSynchronisation64Full(t *testing.T)  { testCanonicalSynchronisation(t, 64, FullSync) }
-func TestCanonicalSynchronisation64Fast(t *testing.T)  { testCanonicalSynchronisation(t, 64, FastSync) }
-func TestCanonicalSynchronisation64Light(t *testing.T) { testCanonicalSynchronisation(t, 64, LightSync) }
+func TestCanonicalSynchronisation62(t *testing.T)     { testCanonicalSynchronisation(t, 62, FullSync) }
+func TestCanonicalSynchronisation63Full(t *testing.T) { testCanonicalSynchronisation(t, 63, FullSync) }
+func TestCanonicalSynchronisation63Fast(t *testing.T) { testCanonicalSynchronisation(t, 63, FastSync) }
+func TestCanonicalSynchronisation64Full(t *testing.T) { testCanonicalSynchronisation(t, 64, FullSync) }
+func TestCanonicalSynchronisation64Fast(t *testing.T) { testCanonicalSynchronisation(t, 64, FastSync) }
+func TestCanonicalSynchronisation64Light(t *testing.T) {
+	testCanonicalSynchronisation(t, 64, LightSync)
+}
 
 func testCanonicalSynchronisation(t *testing.T, protocol int, mode SyncMode) {
 	t.Parallel()
@@ -458,7 +537,6 @@ func TestThrottling64Fast(t *testing.T) { testThrottling(t, 64, FastSync) }
 func testThrottling(t *testing.T, protocol int, mode SyncMode) {
 	t.Parallel()
 	tester := newTester()
-	defer tester.terminate()
 
 	// Create a long block chain to download and the tester
 	targetBlocks := testChainBase.len() - 1
@@ -490,31 +568,32 @@ func testThrottling(t *testing.T, protocol int, mode SyncMode) {
 			time.Sleep(25 * time.Millisecond)
 
 			tester.lock.Lock()
-			tester.downloader.queue.lock.Lock()
-			cached = len(tester.downloader.queue.blockDonePool)
-			if mode == FastSync {
-				if receipts := len(tester.downloader.queue.receiptDonePool); receipts < cached {
-					cached = receipts
-				}
+			{
+				tester.downloader.queue.resultCache.lock.Lock()
+				cached = tester.downloader.queue.resultCache.countCompleted()
+				tester.downloader.queue.resultCache.lock.Unlock()
+				frozen = int(atomic.LoadUint32(&blocked))
+				retrieved = len(tester.ownBlocks)
+
 			}
-			frozen = int(atomic.LoadUint32(&blocked))
-			retrieved = len(tester.ownBlocks)
-			tester.downloader.queue.lock.Unlock()
 			tester.lock.Unlock()
 
-			if cached == blockCacheItems || cached == blockCacheItems-reorgProtHeaderDelay || retrieved+cached+frozen == targetBlocks+1 || retrieved+cached+frozen == targetBlocks+1-reorgProtHeaderDelay {
+			if cached == blockCacheItems ||
+				cached == blockCacheItems-reorgProtHeaderDelay ||
+				retrieved+cached+frozen == targetBlocks+1 ||
+				retrieved+cached+frozen == targetBlocks+1-reorgProtHeaderDelay {
 				break
 			}
 		}
 		// Make sure we filled up the cache, then exhaust it
 		time.Sleep(25 * time.Millisecond) // give it a chance to screw up
-
 		tester.lock.RLock()
 		retrieved = len(tester.ownBlocks)
 		tester.lock.RUnlock()
 		if cached != blockCacheItems && cached != blockCacheItems-reorgProtHeaderDelay && retrieved+cached+frozen != targetBlocks+1 && retrieved+cached+frozen != targetBlocks+1-reorgProtHeaderDelay {
 			t.Fatalf("block count mismatch: have %v, want %v (owned %v, blocked %v, target %v)", cached, blockCacheItems, retrieved, frozen, targetBlocks+1)
 		}
+
 		// Permit the blocked blocks to import
 		if atomic.LoadUint32(&blocked) > 0 {
 			atomic.StoreUint32(&blocked, uint32(0))
@@ -526,6 +605,8 @@ func testThrottling(t *testing.T, protocol int, mode SyncMode) {
 	if err := <-errc; err != nil {
 		t.Fatalf("block synchronization failed: %v", err)
 	}
+	tester.terminate()
+
 }
 
 // Tests that simple synchronization against a forked chain works correctly. In
@@ -548,7 +629,6 @@ func testForkedSync(t *testing.T, protocol int, mode SyncMode) {
 	chainB := testChainForkLightB.shorten(testChainBase.len() + 80)
 	tester.newPeer("fork A", protocol, chainA)
 	tester.newPeer("fork B", protocol, chainB)
-
 	// Synchronise with the peer and make sure all blocks were retrieved
 	if err := tester.sync("fork A", nil, mode); err != nil {
 		t.Fatalf("failed to synchronise blocks: %v", err)
@@ -640,15 +720,12 @@ func TestBoundedHeavyForkedSync64Light(t *testing.T) { testBoundedHeavyForkedSyn
 
 func testBoundedHeavyForkedSync(t *testing.T, protocol int, mode SyncMode) {
 	t.Parallel()
-
 	tester := newTester()
-	defer tester.terminate()
 
 	// Create a long enough forked chain
 	chainA := testChainForkLightA
 	chainB := testChainForkHeavy
 	tester.newPeer("original", protocol, chainA)
-	tester.newPeer("heavy-rewriter", protocol, chainB)
 
 	// Synchronise with the peer and make sure all blocks were retrieved
 	if err := tester.sync("original", nil, mode); err != nil {
@@ -656,10 +733,12 @@ func testBoundedHeavyForkedSync(t *testing.T, protocol int, mode SyncMode) {
 	}
 	assertOwnChain(t, tester, chainA.len())
 
+	tester.newPeer("heavy-rewriter", protocol, chainB)
 	// Synchronise with the second peer and ensure that the fork is rejected to being too old
 	if err := tester.sync("heavy-rewriter", nil, mode); err != errInvalidAncestor {
 		t.Fatalf("sync failure mismatch: have %v, want %v", err, errInvalidAncestor)
 	}
+	tester.terminate()
 }
 
 // Tests that an inactive downloader will not accept incoming block headers and
@@ -927,7 +1006,6 @@ func testInvalidHeaderRollback(t *testing.T, protocol int, mode SyncMode) {
 	t.Parallel()
 
 	tester := newTester()
-	defer tester.terminate()
 
 	// Create a small enough block chain to download
 	targetBlocks := 3*fsHeaderSafetyNet + 256 + fsMinFullBlocks
@@ -1007,9 +1085,10 @@ func testInvalidHeaderRollback(t *testing.T, protocol int, mode SyncMode) {
 			t.Fatalf("synchronised blocks mismatch: have %v, want %v", bs, chain.len())
 		}
 	}
+	tester.terminate()
 }
 
-// Tests that a peer advertising an high TD doesn't get to stall the downloader
+// Tests that a peer advertising a high TD doesn't get to stall the downloader
 // afterwards by not sending any useful hashes.
 func TestHighTDStarvationAttack62(t *testing.T)      { testHighTDStarvationAttack(t, 62, FullSync) }
 func TestHighTDStarvationAttack63Full(t *testing.T)  { testHighTDStarvationAttack(t, 63, FullSync) }
@@ -1022,13 +1101,13 @@ func testHighTDStarvationAttack(t *testing.T, protocol int, mode SyncMode) {
 	t.Parallel()
 
 	tester := newTester()
-	defer tester.terminate()
 
 	chain := testChainBase.shorten(1)
 	tester.newPeer("attack", protocol, chain)
 	if err := tester.sync("attack", big.NewInt(1000000), mode); err != errStallingPeer {
 		t.Fatalf("synchronisation error mismatch: have %v, want %v", err, errStallingPeer)
 	}
+	tester.terminate()
 }
 
 // Tests that misbehaving peers are disconnected, whilst behaving ones are not.
@@ -1049,20 +1128,15 @@ func testBlockHeaderAttackerDropping(t *testing.T, protocol int) {
 		{errUnknownPeer, false},             // Peer is unknown, was already dropped, don't double drop
 		{errBadPeer, true},                  // Peer was deemed bad for some reason, drop it
 		{errStallingPeer, true},             // Peer was detected to be stalling, drop it
+		{errUnsyncedPeer, true},             // Peer was detected to be unsynced, drop it
 		{errNoPeers, false},                 // No peers to download from, soft race, no issue
 		{errTimeout, true},                  // No hashes received in due time, drop the peer
 		{errEmptyHeaderSet, true},           // No headers were returned as a response, drop as it's a dead end
 		{errPeersUnavailable, true},         // Nobody had the advertised blocks, drop the advertiser
 		{errInvalidAncestor, true},          // Agreed upon ancestor is not acceptable, drop the chain rewriter
 		{errInvalidChain, true},             // Hash chain was detected as invalid, definitely drop
-		{errInvalidBlock, false},            // A bad peer was detected, but not the sync origin
 		{errInvalidBody, false},             // A bad peer was detected, but not the sync origin
 		{errInvalidReceipt, false},          // A bad peer was detected, but not the sync origin
-		{errCancelBlockFetch, false},        // Synchronisation was canceled, origin may be innocent, don't drop
-		{errCancelHeaderFetch, false},       // Synchronisation was canceled, origin may be innocent, don't drop
-		{errCancelBodyFetch, false},         // Synchronisation was canceled, origin may be innocent, don't drop
-		{errCancelReceiptFetch, false},      // Synchronisation was canceled, origin may be innocent, don't drop
-		{errCancelHeaderProcessing, false},  // Synchronisation was canceled, origin may be innocent, don't drop
 		{errCancelContentProcessing, false}, // Synchronisation was canceled, origin may be innocent, don't drop
 	}
 	// Run the tests and check disconnection status
@@ -1071,7 +1145,7 @@ func testBlockHeaderAttackerDropping(t *testing.T, protocol int) {
 	chain := testChainBase.shorten(1)
 
 	for i, tt := range tests {
-		// Register a new peer and ensure it's presence
+		// Register a new peer and ensure its presence
 		id := fmt.Sprintf("test %d", i)
 		if err := tester.newPeer(id, protocol, chain); err != nil {
 			t.Fatalf("test %d: failed to register new peer: %v", i, err)
@@ -1561,9 +1635,45 @@ func TestRemoteHeaderRequestSpan(t *testing.T) {
 		if failed {
 			res := strings.Replace(fmt.Sprint(data), " ", ",", -1)
 			exp := strings.Replace(fmt.Sprint(tt.expected), " ", ",", -1)
-			fmt.Printf("got: %v\n", res)
-			fmt.Printf("exp: %v\n", exp)
+			t.Logf("got: %v\n", res)
+			t.Logf("exp: %v\n", exp)
 			t.Errorf("test %d: wrong values", i)
 		}
+	}
+}
+
+// Tests that peers below a pre-configured checkpoint block are prevented from
+// being fast-synced from, avoiding potential cheap eclipse attacks.
+func TestCheckpointEnforcement62(t *testing.T)      { testCheckpointEnforcement(t, 62, FullSync) }
+func TestCheckpointEnforcement63Full(t *testing.T)  { testCheckpointEnforcement(t, 63, FullSync) }
+func TestCheckpointEnforcement63Fast(t *testing.T)  { testCheckpointEnforcement(t, 63, FastSync) }
+func TestCheckpointEnforcement64Full(t *testing.T)  { testCheckpointEnforcement(t, 64, FullSync) }
+func TestCheckpointEnforcement64Fast(t *testing.T)  { testCheckpointEnforcement(t, 64, FastSync) }
+func TestCheckpointEnforcement64Light(t *testing.T) { testCheckpointEnforcement(t, 64, LightSync) }
+
+func testCheckpointEnforcement(t *testing.T, protocol int, mode SyncMode) {
+	t.Parallel()
+
+	// Create a new tester with a particular hard coded checkpoint block
+	tester := newTester()
+	defer tester.terminate()
+
+	tester.downloader.checkpoint = uint64(fsMinFullBlocks) + 256
+	chain := testChainBase.shorten(int(tester.downloader.checkpoint) - 1)
+
+	// Attempt to sync with the peer and validate the result
+	tester.newPeer("peer", protocol, chain)
+
+	var expect error
+	if mode == FastSync || mode == LightSync {
+		expect = errUnsyncedPeer
+	}
+	if err := tester.sync("peer", nil, mode); err != expect {
+		t.Fatalf("block sync error mismatch: have %v, want %v", err, expect)
+	}
+	if mode == FastSync || mode == LightSync {
+		assertOwnChain(t, tester, 1)
+	} else {
+		assertOwnChain(t, tester, chain.len())
 	}
 }

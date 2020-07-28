@@ -54,7 +54,7 @@ func (eth *Ethereum) startBloomHandlers(sectionSize uint64) {
 		go func() {
 			for {
 				select {
-				case <-eth.shutdownChan:
+				case <-eth.closeBloomHandler:
 					return
 
 				case request := <-eth.bloomRequests:
@@ -102,7 +102,7 @@ func NewBloomIndexer(db ethdb.Database, size, confirms uint64) *core.ChainIndexe
 		db:   db,
 		size: size,
 	}
-	table := ethdb.NewTable(db, string(rawdb.BloomBitsIndexPrefix))
+	table := rawdb.NewTable(db, string(rawdb.BloomBitsIndexPrefix))
 
 	return core.NewChainIndexer(db, table, backend, size, confirms, bloomThrottling, "bloombits")
 }
@@ -135,4 +135,9 @@ func (b *BloomIndexer) Commit() error {
 		rawdb.WriteBloomBits(batch, uint(i), b.section, b.head, bitutil.CompressBytes(bits))
 	}
 	return batch.Write()
+}
+
+// PruneSections returns an empty error since we don't support pruning here.
+func (b *BloomIndexer) Prune(threshold uint64) error {
+	return nil
 }
