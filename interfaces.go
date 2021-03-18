@@ -119,6 +119,8 @@ type CallMsg struct {
 	GasPrice *big.Int        // wei <-> gas exchange ratio
 	Value    *big.Int        // amount of wei sent along with the call
 	Data     []byte          // input data, usually an ABI-encoded contract method invocation
+
+	AccessList types.AccessList // EIP-2930 access list.
 }
 
 // A ContractCaller provides contract calls, essentially transactions that are executed by
@@ -144,9 +146,9 @@ type FilterQuery struct {
 	// Examples:
 	// {} or nil          matches any topic list
 	// {{A}}              matches topic A in first position
-	// {{}, {B}}          matches any topic in first position, B in second position
-	// {{A}, {B}}         matches topic A in first position, B in second position
-	// {{A, B}, {C, D}}   matches topic (A OR B) in first position, (C OR D) in second position
+	// {{}, {B}}          matches any topic in first position AND B in second position
+	// {{A}, {B}}         matches topic A in first position AND B in second position
+	// {{A, B}, {C, D}}   matches topic (A OR B) in first position AND (C OR D) in second position
 	Topics [][]common.Hash
 }
 

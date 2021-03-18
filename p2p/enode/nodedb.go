@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2018 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -41,6 +41,7 @@ const (
 	dbNodePrefix   = "n:"      // Identifier to prefix node entries with
 	dbLocalPrefix  = "local:"
 	dbDiscoverRoot = "v4"
+	dbDiscv5Root   = "v5"
 
 	// These fields are stored per ID and IP, the full key is "n:<ID>:v4:<IP>:findfail".
 	// Use nodeItemKey to create those keys.
@@ -57,7 +58,11 @@ const (
 const (
 	dbNodeExpiration = 24 * time.Hour // Time after which an unseen node should be dropped.
 	dbCleanupCycle   = time.Hour      // Time period for running the expiration task.
-	dbVersion        = 8
+	dbVersion        = 9
+)
+
+var (
+	errInvalidIP = errors.New("invalid IP")
 )
 
 var zeroIP = make(net.IP, 16)
@@ -162,7 +167,7 @@ func splitNodeItemKey(key []byte) (id ID, ip net.IP, field string) {
 	}
 	key = key[len(dbDiscoverRoot)+1:]
 	// Split out the IP.
-	ip = net.IP(key[:16])
+	ip = key[:16]
 	if ip4 := ip.To4(); ip4 != nil {
 		ip = ip4
 	}
@@ -170,6 +175,16 @@ func splitNodeItemKey(key []byte) (id ID, ip net.IP, field string) {
 	// Field is the remainder of key.
 	field = string(key)
 	return id, ip, field
+}
+
+func v5Key(id ID, ip net.IP, field string) []byte {
+	return bytes.Join([][]byte{
+		[]byte(dbNodePrefix),
+		id[:],
+		[]byte(dbDiscv5Root),
+		ip.To16(),
+		[]byte(field),
+	}, []byte{':'})
 }
 
 // localItemKey returns the key of a local node item.
@@ -348,16 +363,25 @@ func (db *DB) expireNodes() {
 // LastPingReceived retrieves the time of the last ping packet received from
 // a remote node.
 func (db *DB) LastPingReceived(id ID, ip net.IP) time.Time {
+	if ip = ip.To16(); ip == nil {
+		return time.Time{}
+	}
 	return time.Unix(db.fetchInt64(nodeItemKey(id, ip, dbNodePing)), 0)
 }
 
 // UpdateLastPingReceived updates the last time we tried contacting a remote node.
 func (db *DB) UpdateLastPingReceived(id ID, ip net.IP, instance time.Time) error {
+	if ip = ip.To16(); ip == nil {
+		return errInvalidIP
+	}
 	return db.storeInt64(nodeItemKey(id, ip, dbNodePing), instance.Unix())
 }
 
 // LastPongReceived retrieves the time of the last successful pong from remote node.
 func (db *DB) LastPongReceived(id ID, ip net.IP) time.Time {
+	if ip = ip.To16(); ip == nil {
+		return time.Time{}
+	}
 	// Launch expirer
 	db.ensureExpirer()
 	return time.Unix(db.fetchInt64(nodeItemKey(id, ip, dbNodePong)), 0)
@@ -365,27 +389,52 @@ func (db *DB) LastPongReceived(id ID, ip net.IP) time.Time {
 
 // UpdateLastPongReceived updates the last pong time of a node.
 func (db *DB) UpdateLastPongReceived(id ID, ip net.IP, instance time.Time) error {
+	if ip = ip.To16(); ip == nil {
+		return errInvalidIP
+	}
 	return db.storeInt64(nodeItemKey(id, ip, dbNodePong), instance.Unix())
 }
 
 // FindFails retrieves the number of findnode failures since bonding.
 func (db *DB) FindFails(id ID, ip net.IP) int {
+	if ip = ip.To16(); ip == nil {
+		return 0
+	}
 	return int(db.fetchInt64(nodeItemKey(id, ip, dbNodeFindFails)))
 }
 
 // UpdateFindFails updates the number of findnode failures since bonding.
 func (db *DB) UpdateFindFails(id ID, ip net.IP, fails int) error {
+	if ip = ip.To16(); ip == nil {
+		return errInvalidIP
+	}
 	return db.storeInt64(nodeItemKey(id, ip, dbNodeFindFails), int64(fails))
+}
+
+// FindFailsV5 retrieves the discv5 findnode failure counter.
+func (db *DB) FindFailsV5(id ID, ip net.IP) int {
+	if ip = ip.To16(); ip == nil {
+		return 0
+	}
+	return int(db.fetchInt64(v5Key(id, ip, dbNodeFindFails)))
+}
+
+// UpdateFindFailsV5 stores the discv5 findnode failure counter.
+func (db *DB) UpdateFindFailsV5(id ID, ip net.IP, fails int) error {
+	if ip = ip.To16(); ip == nil {
+		return errInvalidIP
+	}
+	return db.storeInt64(v5Key(id, ip, dbNodeFindFails), int64(fails))
 }
 
 // LocalSeq retrieves the local record sequence counter.
 func (db *DB) localSeq(id ID) uint64 {
-	return db.fetchUint64(nodeItemKey(id, zeroIP, dbLocalSeq))
+	return db.fetchUint64(localItemKey(id, dbLocalSeq))
 }
 
 // storeLocalSeq stores the local record sequence counter.
 func (db *DB) storeLocalSeq(id ID, n uint64) {
-	db.storeUint64(nodeItemKey(id, zeroIP, dbLocalSeq), n)
+	db.storeUint64(localItemKey(id, dbLocalSeq), n)
 }
 
 // QuerySeeds retrieves random nodes to be used as potential seed nodes
