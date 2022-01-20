@@ -1,3 +1,4 @@
 [submodule "tests/testdata"]
 	path = tests/testdata
-	url = https://github.com/ethereum/tests.git
+	url = https://github.com/ethereum/tests
+	shallow = true
