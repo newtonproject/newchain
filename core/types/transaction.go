@@ -327,6 +327,11 @@ func (tx *Transaction) EffectiveGasTip(baseFee *big.Int) (*big.Int, error) {
 	if baseFee == nil {
 		return tx.GasTipCap(), nil
 	}
+	if tx.GasPrice().BitLen() == 0 &&
+		tx.GasFeeCap().BitLen() == 0 &&
+		tx.GasTipCap().BitLen() == 0 {
+		return tx.GasTipCap(), nil
+	}
 	var err error
 	gasFeeCap := tx.GasFeeCap()
 	if gasFeeCap.Cmp(baseFee) == -1 {
