@@ -62,6 +62,7 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 		parentGasTarget          = parent.GasLimit / params.ElasticityMultiplier
 		parentGasTargetBig       = new(big.Int).SetUint64(parentGasTarget)
 		baseFeeChangeDenominator = new(big.Int).SetUint64(params.BaseFeeChangeDenominator)
+		baseFeeMin               = new(big.Int).SetUint64(params.BaseFeeMin)
 	)
 	// If the parent gasUsed is the same as the target, the baseFee remains unchanged.
 	if parent.GasUsed == parentGasTarget {
@@ -77,7 +78,10 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 			common.Big1,
 		)
 
-		return x.Add(parent.BaseFee, baseFeeDelta)
+		return math.BigMax(
+			x.Add(parent.BaseFee, baseFeeDelta),
+			baseFeeMin,
+		)
 	} else {
 		// Otherwise if the parent block used less gas than its target, the baseFee should decrease.
 		gasUsedDelta := new(big.Int).SetUint64(parentGasTarget - parent.GasUsed)
@@ -87,7 +91,7 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 
 		return math.BigMax(
 			x.Sub(parent.BaseFee, baseFeeDelta),
-			common.Big0,
+			baseFeeMin,
 		)
 	}
 }
