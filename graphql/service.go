@@ -52,7 +52,6 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(responseJSON)
-
 }
 
 // New constructs a new GraphQL service instance.
@@ -74,7 +73,7 @@ func newHandler(stack *node.Node, backend ethapi.Backend, cors, vhosts []string)
 		return err
 	}
 	h := handler{Schema: s}
-	handler := node.NewHTTPHandlerStack(h, cors, vhosts)
+	handler := node.NewHTTPHandlerStack(h, cors, vhosts, nil)
 
 	stack.RegisterHandler("GraphQL UI", "/graphql/ui", GraphiQL{})
 	stack.RegisterHandler("GraphQL", "/graphql", handler)

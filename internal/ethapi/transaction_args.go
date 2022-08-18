@@ -55,20 +55,20 @@ type TransactionArgs struct {
 }
 
 // from retrieves the transaction sender address.
-func (arg *TransactionArgs) from() common.Address {
-	if arg.From == nil {
+func (args *TransactionArgs) from() common.Address {
+	if args.From == nil {
 		return common.Address{}
 	}
-	return *arg.From
+	return *args.From
 }
 
 // data retrieves the transaction calldata. Input field is preferred.
-func (arg *TransactionArgs) data() []byte {
-	if arg.Input != nil {
-		return *arg.Input
+func (args *TransactionArgs) data() []byte {
+	if args.Input != nil {
+		return *args.Input
 	}
-	if arg.Data != nil {
-		return *arg.Data
+	if args.Data != nil {
+		return *args.Data
 	}
 	return nil
 }
@@ -165,9 +165,15 @@ func (args *TransactionArgs) setDefaults(ctx context.Context, b Backend) error {
 		args.Gas = &estimated
 		log.Trace("Estimate gas usage automatically", "gas", args.Gas)
 	}
-	if args.ChainID == nil {
-		id := (*hexutil.Big)(b.ChainConfig().ChainID)
-		args.ChainID = id
+	// If chain id is provided, ensure it matches the local chain id. Otherwise, set the local
+	// chain id as the default.
+	want := b.ChainConfig().ChainID
+	if args.ChainID != nil {
+		if have := (*big.Int)(args.ChainID); have.Cmp(want) != 0 {
+			return fmt.Errorf("chainId does not match node's (have=%v, want=%v)", have, want)
+		}
+	} else {
+		args.ChainID = (*hexutil.Big)(want)
 	}
 	return nil
 }

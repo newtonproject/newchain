@@ -18,9 +18,7 @@ package filters
 
 import (
 	"context"
-	"io/ioutil"
 	"math/big"
-	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -42,11 +40,7 @@ func makeReceipt(addr common.Address) *types.Receipt {
 }
 
 func BenchmarkFilters(b *testing.B) {
-	dir, err := ioutil.TempDir("", "filtertest")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := b.TempDir()
 
 	var (
 		db, _   = rawdb.NewLevelDBDatabase(dir, 0, 0, "", false)
@@ -78,7 +72,6 @@ func BenchmarkFilters(b *testing.B) {
 			receipt := makeReceipt(addr4)
 			gen.AddUncheckedReceipt(receipt)
 			gen.AddUncheckedTx(types.NewTransaction(999, common.HexToAddress("0x999"), big.NewInt(999), 999, gen.BaseFee(), nil))
-
 		}
 	})
 	for i, block := range chain {
@@ -100,11 +93,7 @@ func BenchmarkFilters(b *testing.B) {
 }
 
 func TestFilters(t *testing.T) {
-	dir, err := ioutil.TempDir("", "filtertest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	var (
 		db, _   = rawdb.NewLevelDBDatabase(dir, 0, 0, "", false)
